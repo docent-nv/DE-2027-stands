@@ -1,0 +1,6 @@
+*.qcow2
+*.iso
+*.img
+*.ova
+images/
+run/
