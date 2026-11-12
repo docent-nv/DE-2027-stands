@@ -4,3 +4,4 @@
 *.ova
 images/
 run/
+__pycache__/
