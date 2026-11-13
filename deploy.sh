@@ -57,9 +57,9 @@ chmod +x "$WORK/PVE-ASDaC-BASH.sh"
 declare -A NEED=(
     [Alt-SRV_11.1.qcow2]='Альт Сервер 11.1 (ISP, HQ-SRV, BR-SRV)'
     [Alt-WS_11.2.qcow2]='Альт Рабочая станция 11.2 (HQ-CLI)'
-    [EcoRouterOS.qcow2]='EcoRouterOS Pesto (HQ-RTR, BR-RTR; варианты 1 и 3)'
-    [NGFW.qcow2]='Ideco NGFW v23 (BR-FW; варианты 1 и 3)'
-    [Additional.iso]='Additional.iso (только вариант 3 — задания 2 и 3)'
+    [EcoRouterOS.qcow2]='EcoRouterOS Pesto (HQ-RTR, BR-RTR)'
+    [NGFW.qcow2]='Ideco NGFW v23 (BR-FW)'
+    [Additional.iso]='Additional.iso (только вариант 2 — задания 2 и 3)'
 )
 echo; info "Проверка образов в $IMG_DIR"
 missing=0
@@ -70,8 +70,11 @@ for f in Alt-SRV_11.1.qcow2 Alt-WS_11.2.qcow2 EcoRouterOS.qcow2 NGFW.qcow2 Addit
     fi
     size=$(du -h --apparent-size "$p" | cut -f1)
     if [[ $f == *.qcow2 ]]; then
-        fmt=$(qemu-img info --output=json "$p" 2>/dev/null | grep -Po '"format":\s*"\K[^"]+' | head -1)
-        vsz=$(qemu-img info --output=json "$p" 2>/dev/null | grep -Po '"virtual-size":\s*\K[0-9]+' | head -1)
+        # формат и размер берём с верхнего уровня JSON: в новых версиях qemu-img (Proxmox 8.2+ / 9)
+        # первым идёт блок "children" с "format": "file" — это слой файла, а не формат образа
+        read -r fmt vsz < <(qemu-img info --output=json "$p" 2>/dev/null \
+            | python3 -c 'import json,sys; j=json.load(sys.stdin); print(j.get("format","?"), j.get("virtual-size",0))' 2>/dev/null)
+        vsz=${vsz:-0}
         [[ $fmt == qcow2 ]] || { err "$f: формат «${fmt:-не определён}», ожидается qcow2"; ((missing++)); continue; }
         ok "$f  (${size} на диске, виртуальный размер $((vsz/1024/1024/1024)) ГБ)"
     else
@@ -84,14 +87,14 @@ if [[ -f "$IMG_DIR/images.sha256" ]]; then
 fi
 if (( missing )); then
     echo
-    warn "Не хватает файлов: $missing. Варианту 2 (всё на Альт) нужны только образы Альт;"
-    warn "варианту 1 — Альт + EcoRouter + Ideco; варианту 3 — ещё и Additional.iso."
+    warn "Не хватает файлов: $missing. Варианту 1 нужны образы Альт + EcoRouter + Ideco;"
+    warn "варианту 2 (задания 2 и 3) — ещё и Additional.iso."
     read -r -p "Продолжить всё равно? [y/N]: " a </dev/tty; [[ $a =~ ^[yYдД]$ ]] || exit 1
 fi
 
 # ---------- 3. Ресурсы узла ----------
 mem_gb=$(awk '/MemTotal/{printf "%d", $2/1024/1024}' /proc/meminfo)
-info "ОЗУ узла: ${mem_gb} ГБ. Один стенд варианта 1/3 требует ≈ 23 ГБ, варианта 2 ≈ 11 ГБ (без учёта KSM)."
+info "ОЗУ узла: ${mem_gb} ГБ. Один стенд требует ≈ 23 ГБ (без учёта KSM)."
 
 # ---------- 4. Запуск PVE-ASDaC-BASH ----------
 echo; info "Запуск: ./PVE-ASDaC-BASH.sh -c configs/de27.conf -z $*"
